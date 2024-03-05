@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://jan.ai/blog</id>
     <title>Jan Blog</title>
-    <updated>2024-03-05T08:00:48.000Z</updated>
+    <updated>2024-03-05T12:18:17.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://jan.ai/blog"/>
     <subtitle>Jan Blog</subtitle>
@@ -11,7 +11,7 @@
         <title type="html"><![CDATA[Post Mortem: Bitdefender False Positive Flag]]></title>
         <id>https://jan.ai/blog/postmortems/january-10-2024-bitdefender-false-positive-flag</id>
         <link href="https://jan.ai/blog/postmortems/january-10-2024-bitdefender-false-positive-flag"/>
-        <updated>2024-03-05T08:00:48.000Z</updated>
+        <updated>2024-03-05T12:18:17.000Z</updated>
         <summary type="html"><![CDATA[10th January 2024, Jan's 0.4.4 Release on Windows triggered Bitdefender to incorrectly flag it as infected with Gen:Variant.Tedy.258323, leading to automatic quarantine warnings on users' computers.]]></summary>
         <content type="html"><![CDATA[<p>Following the recent incident related to Jan version 0.4.4 triggering Bitdefender on Windows with Gen<!-- -->:Variant<!-- -->.Tedy.258323 on January 10, 2024, we wanted to provide a comprehensive postmortem and outline the necessary follow-up actions.</p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="incident-overview">Incident Overview<a href="https://jan.ai/blog/postmortems/january-10-2024-bitdefender-false-positive-flag#incident-overview" class="hash-link" aria-label="Direct link to Incident Overview" title="Direct link to Incident Overview">​</a></h2>
