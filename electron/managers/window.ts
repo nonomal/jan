@@ -1,4 +1,4 @@
-import { BrowserWindow, app, shell } from 'electron'
+import { BrowserWindow, app, nativeImage, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { AppEvent } from '@janhq/core'
 import { mainWindowConfig } from './mainWindowConfig'
@@ -28,6 +28,17 @@ class WindowManager {
         webSecurity: false,
       },
     })
+
+    this.mainWindow.setSkipTaskbar(false)
+    this.mainWindow.setThumbarButtons([
+      {
+        tooltip: 'Open Quick Ask',
+        icon: nativeImage.createFromPath(`${app.getAppPath()}/icons/icon.png`),
+        click: () => {
+          this.showQuickAskWindow()
+        },
+      },
+    ])
 
     /* Load frontend app to the window */
     this.mainWindow.loadURL(startUrl)
