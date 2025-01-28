@@ -6,54 +6,112 @@ import {
   ModelEvent,
   ModelExtension,
   events,
+  ModelManager,
+  InferenceEngine,
 } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
+import { useDebouncedCallback } from 'use-debounce'
+
 import { extensionManager } from '@/extension'
+
 import {
   configuredModelsAtom,
   downloadedModelsAtom,
 } from '@/helpers/atoms/Model.atom'
 
+/**
+ * useModels hook - Handles the state of models
+ * It fetches the downloaded models, configured models and default model from Model Extension
+ * and updates the atoms accordingly.
+ */
 const useModels = () => {
   const setDownloadedModels = useSetAtom(downloadedModelsAtom)
-  const setConfiguredModels = useSetAtom(configuredModelsAtom)
+  const setExtensionModels = useSetAtom(configuredModelsAtom)
 
   const getData = useCallback(() => {
     const getDownloadedModels = async () => {
-      const models = await getLocalDownloadedModels()
-      setDownloadedModels(models)
+      const localModels = (await getModels()).map((e) => ({
+        ...e,
+        name: ModelManager.instance().models.get(e.id)?.name ?? e.name ?? e.id,
+        metadata:
+          ModelManager.instance().models.get(e.id)?.metadata ?? e.metadata,
+      }))
+
+      const remoteModels = ModelManager.instance()
+        .models.values()
+        .toArray()
+        .filter((e) => e.engine !== InferenceEngine.cortex_llamacpp)
+      const toUpdate = [
+        ...localModels,
+        ...remoteModels.filter(
+          (e: Model) => !localModels.some((g: Model) => g.id === e.id)
+        ),
+      ]
+
+      setDownloadedModels(toUpdate)
+
+      let isUpdated = false
+
+      toUpdate.forEach((model) => {
+        if (!ModelManager.instance().models.has(model.id)) {
+          ModelManager.instance().models.set(model.id, model)
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+          isUpdated = true
+        }
+      })
+      if (isUpdated) {
+        getExtensionModels()
+      }
     }
-    const getConfiguredModels = async () => {
-      const models = await getLocalConfiguredModels()
-      setConfiguredModels(models)
+
+    const getExtensionModels = () => {
+      const models = ModelManager.instance().models.values().toArray()
+      setExtensionModels(models)
     }
+    // Fetch all data
+    getExtensionModels()
     getDownloadedModels()
-    getConfiguredModels()
-  }, [setDownloadedModels, setConfiguredModels])
+  }, [setDownloadedModels, setExtensionModels])
+
+  const reloadData = useDebouncedCallback(() => getData(), 300)
+
+  const updateStates = useCallback(() => {
+    const cachedModels = ModelManager.instance().models.values().toArray()
+    setDownloadedModels((downloadedModels) => [
+      ...downloadedModels,
+      ...cachedModels.filter(
+        (e) =>
+          e.engine !== InferenceEngine.cortex_llamacpp &&
+          !downloadedModels.some((g: Model) => g.id === e.id)
+      ),
+    ])
+
+    setExtensionModels(cachedModels)
+  }, [setDownloadedModels, setExtensionModels])
+
+  const getModels = async (): Promise<Model[]> =>
+    extensionManager
+      .get<ModelExtension>(ExtensionTypeEnum.Model)
+      ?.getModels()
+      .catch(() => []) ?? []
 
   useEffect(() => {
-    // Try get data on mount
-    getData()
-
     // Listen for model updates
-    events.on(ModelEvent.OnModelsUpdate, async () => getData())
+    events.on(ModelEvent.OnModelsUpdate, async (data: { fetch?: boolean }) => {
+      if (data.fetch) reloadData()
+      else updateStates()
+    })
     return () => {
       // Remove listener on unmount
       events.off(ModelEvent.OnModelsUpdate, async () => {})
     }
-  }, [getData])
+  }, [reloadData, updateStates])
+
+  return {
+    getData,
+  }
 }
-
-const getLocalConfiguredModels = async (): Promise<Model[]> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.getConfiguredModels() ?? []
-
-const getLocalDownloadedModels = async (): Promise<Model[]> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.getDownloadedModels() ?? []
 
 export default useModels

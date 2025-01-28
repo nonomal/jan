@@ -1,5 +1,5 @@
 import { resolve, sep } from 'path'
-import { DownloadEvent } from '../../../api'
+import { DownloadEvent } from '../../../types/api'
 import { normalizeFilePath } from '../../helper/path'
 import { getJanDataFolderPath } from '../../helper'
 import { DownloadManager } from '../../helper/download'
@@ -34,7 +34,7 @@ export class Downloader implements Processor {
     }
     const array = normalizedPath.split(sep)
     const fileName = array.pop() ?? ''
-    const modelId = array.pop() ?? ''
+    const modelId = downloadRequest.modelId ?? array.pop() ?? ''
 
     const destination = resolve(getJanDataFolderPath(), normalizedPath)
     const rq = request({ url, strictSSL, proxy })
@@ -49,11 +49,6 @@ export class Downloader implements Processor {
     const initialDownloadState: DownloadState = {
       modelId,
       fileName,
-      time: {
-        elapsed: 0,
-        remaining: 0,
-      },
-      speed: 0,
       percent: 0,
       size: {
         total: 0,
@@ -66,6 +61,7 @@ export class Downloader implements Processor {
       localPath: normalizedPath,
     }
     DownloadManager.instance.downloadProgressMap[modelId] = initialDownloadState
+    DownloadManager.instance.downloadInfo[normalizedPath] = initialDownloadState
 
     if (downloadRequest.downloadType === 'extension') {
       observer?.(DownloadEvent.onFileDownloadUpdate, initialDownloadState)
@@ -98,7 +94,11 @@ export class Downloader implements Processor {
       })
       .on('end', () => {
         const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
-        if (currentDownloadState && DownloadManager.instance.networkRequests[normalizedPath]) {
+        if (
+          currentDownloadState &&
+          DownloadManager.instance.networkRequests[normalizedPath] &&
+          DownloadManager.instance.downloadProgressMap[modelId]?.downloadState !== 'error'
+        ) {
           // Finished downloading, rename temp file to actual file
           renameSync(downloadingTempFile, destination)
           const downloadState: DownloadState = {
@@ -118,19 +118,21 @@ export class Downloader implements Processor {
     if (rq) {
       DownloadManager.instance.networkRequests[fileName] = undefined
       rq?.abort()
-    } else {
-      observer?.(DownloadEvent.onFileDownloadError, {
-        fileName,
-        error: 'aborted',
-      })
     }
+
+    const downloadInfo = DownloadManager.instance.downloadInfo[fileName]
+    observer?.(DownloadEvent.onFileDownloadError, {
+      ...downloadInfo,
+      fileName,
+      error: 'aborted',
+    })
   }
 
-  resumeDownload(observer: any, fileName: any) {
+  resumeDownload(_observer: any, fileName: any) {
     DownloadManager.instance.networkRequests[fileName]?.resume()
   }
 
-  pauseDownload(observer: any, fileName: any) {
+  pauseDownload(_observer: any, fileName: any) {
     DownloadManager.instance.networkRequests[fileName]?.pause()
   }
 }

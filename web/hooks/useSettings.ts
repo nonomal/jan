@@ -1,36 +1,30 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { fs, joinPath } from '@janhq/core'
-import { atom, useAtom } from 'jotai'
 
-export const isShowNotificationAtom = atom<boolean>(false)
+type NvidiaDriver = {
+  exist: boolean
+  version: string
+}
+
+export type AppSettings = {
+  run_mode: 'cpu' | 'gpu' | undefined
+  notify: boolean
+  gpus_in_use: string[]
+  vulkan: boolean
+  gpus: string[]
+  nvidia_driver: NvidiaDriver
+  cuda: NvidiaDriver
+}
 
 export const useSettings = () => {
-  const [isGPUModeEnabled, setIsGPUModeEnabled] = useState(false) // New state for GPU mode
-  const [showNotification, setShowNotification] = useAtom(
-    isShowNotificationAtom
-  )
+  const [settings, setSettings] = useState<AppSettings>()
 
   useEffect(() => {
-    setTimeout(() => validateSettings, 3000)
+    readSettings().then((settings) => setSettings(settings as AppSettings))
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const validateSettings = async () => {
-    readSettings().then((settings) => {
-      if (
-        settings &&
-        settings.notify &&
-        ((settings.nvidia_driver?.exist && !settings.cuda?.exist) ||
-          !settings.nvidia_driver?.exist)
-      ) {
-        setShowNotification(false)
-      }
-
-      // Check if run_mode is 'gpu' or 'cpu' and update state accordingly
-      setIsGPUModeEnabled(settings?.run_mode === 'gpu')
-    })
-  }
 
   const readSettings = useCallback(async () => {
     if (!window?.core?.api) {
@@ -59,30 +53,22 @@ export const useSettings = () => {
     const settings = await readSettings()
     if (runMode != null) settings.run_mode = runMode
     if (notify != null) settings.notify = notify
-    if (gpusInUse != null) settings.gpus_in_use = gpusInUse
+    if (gpusInUse != null) settings.gpus_in_use = gpusInUse.filter((e) => !!e)
     if (vulkan != null) {
       settings.vulkan = vulkan
       // GPU enabled, set run_mode to 'gpu'
-      if (settings.vulkan) {
+      if (settings.vulkan === true) {
         settings.run_mode = 'gpu'
       } else {
-        settings.run_mode = settings.gpus?.length > 0 ? 'gpu' : 'cpu'
+        settings.run_mode = 'cpu'
       }
     }
     await fs.writeFileSync(settingsFile, JSON.stringify(settings))
-
-    // Relaunch to apply settings
-    if (vulkan != null) {
-      window.location.reload()
-    }
   }
 
   return {
-    showNotification,
-    isGPUModeEnabled,
     readSettings,
     saveSettings,
-    setShowNotification,
-    validateSettings,
+    settings,
   }
 }

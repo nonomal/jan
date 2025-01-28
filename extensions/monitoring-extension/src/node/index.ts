@@ -1,9 +1,19 @@
-import { GpuSetting, GpuSettingInfo, ResourceInfo } from '@janhq/core'
-import { getJanDataFolderPath, log } from '@janhq/core/node'
+import {
+  GpuSetting,
+  GpuSettingInfo,
+  LoggerManager,
+  OperatingSystemInfo,
+  ResourceInfo,
+  SupportedPlatforms,
+  getJanDataFolderPath,
+  log,
+} from '@janhq/core/node'
 import { mem, cpu } from 'node-os-utils'
 import { exec } from 'child_process'
 import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs'
 import path from 'path'
+import os from 'os'
+import { FileLogger } from './logger'
 
 /**
  * Path to the settings directory
@@ -39,7 +49,9 @@ const DEFAULT_SETTINGS: GpuSetting = {
 
 export const getGpuConfig = async (): Promise<GpuSetting | undefined> => {
   if (process.platform === 'darwin') return undefined
-  return JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
+  if (existsSync(GPU_INFO_FILE))
+    return JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
+  return DEFAULT_SETTINGS
 }
 
 export const getResourcesInfo = async (): Promise<ResourceInfo> => {
@@ -126,7 +138,7 @@ export const getCurrentLoad = () =>
   })
 
 /**
- * This will retrive GPU informations and persist settings.json
+ * This will retrieve GPU information and persist settings.json
  * Will be called when the extension is loaded to turn on GPU acceleration if supported
  */
 export const updateNvidiaInfo = async () => {
@@ -174,8 +186,7 @@ const updateNvidiaDriverInfo = async () =>
 const getGpuArch = (gpuName: string): string => {
   if (!gpuName.toLowerCase().includes('nvidia')) return 'unknown'
 
-  if (gpuName.includes('20')) return 'turing'
-  else if (gpuName.includes('30')) return 'ampere'
+  if (gpuName.includes('30')) return 'ampere'
   else if (gpuName.includes('40')) return 'ada'
   else return 'unknown'
 }
@@ -191,7 +202,7 @@ const updateGpuInfo = async () =>
         process.platform === 'win32'
           ? `${__dirname}\\..\\bin\\vulkaninfoSDK.exe --summary`
           : `${__dirname}/../bin/vulkaninfo --summary`,
-        (error, stdout) => {
+        async (error, stdout) => {
           if (!error) {
             const output = stdout.toString()
 
@@ -212,8 +223,9 @@ const updateGpuInfo = async () =>
               data.gpus_in_use = [data.gpus.length > 1 ? '1' : '0']
             }
 
-            data = updateCudaExistence(data)
+            data = await updateCudaExistence(data)
             writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
+            log(`[APP]::${JSON.stringify(data)}`)
             resolve({})
           } else {
             reject(error)
@@ -223,9 +235,9 @@ const updateGpuInfo = async () =>
     } else {
       exec(
         'nvidia-smi --query-gpu=index,memory.total,name --format=csv,noheader,nounits',
-        (error, stdout) => {
+        async (error, stdout) => {
           if (!error) {
-            log(stdout)
+            log(`[SPECS]::${stdout}`)
             // Get GPU info and gpu has higher memory first
             let highestVram = 0
             let highestVramId = '0'
@@ -247,15 +259,17 @@ const updateGpuInfo = async () =>
             data.gpu_highest_vram = highestVramId
           } else {
             data.gpus = []
-            data.gpu_highest_vram = ''
+            data.gpu_highest_vram = undefined
           }
 
           if (!data.gpus_in_use || data.gpus_in_use.length === 0) {
-            data.gpus_in_use = [data.gpu_highest_vram]
+            data.gpus_in_use = data.gpu_highest_vram ? [data.gpu_highest_vram].filter(e => !!e) : []
           }
 
-          data = updateCudaExistence(data)
+          data = await updateCudaExistence(data)
+          console.log('[MONITORING]::Cuda info: ', data)
           writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
+          log(`[APP]::${JSON.stringify(data)}`)
           resolve({})
         }
       )
@@ -272,9 +286,9 @@ const checkFileExistenceInPaths = (file: string, paths: string[]): boolean => {
 /**
  * Validate cuda for linux and windows
  */
-const updateCudaExistence = (
+const updateCudaExistence = async (
   data: GpuSetting = DEFAULT_SETTINGS
-): GpuSetting => {
+): Promise<GpuSetting> => {
   let filesCuda12: string[]
   let filesCuda11: string[]
   let paths: string[]
@@ -282,7 +296,7 @@ const updateCudaExistence = (
 
   if (process.platform === 'win32') {
     filesCuda12 = ['cublas64_12.dll', 'cudart64_12.dll', 'cublasLt64_12.dll']
-    filesCuda11 = ['cublas64_11.dll', 'cudart64_11.dll', 'cublasLt64_11.dll']
+    filesCuda11 = ['cublas64_11.dll', 'cudart64_110.dll', 'cublasLt64_11.dll']
     paths = process.env.PATH ? process.env.PATH.split(path.delimiter) : []
   } else {
     filesCuda12 = ['libcudart.so.12', 'libcublas.so.12', 'libcublasLt.so.12']
@@ -318,5 +332,58 @@ const updateCudaExistence = (
   }
 
   data.is_initial = false
+
+  // Attempt to query CUDA using NVIDIA SMI
+  if (!cudaExists) {
+    await new Promise<void>((resolve) => {
+      exec('nvidia-smi', (error, stdout) => {
+        if (!error) {
+          const regex = /CUDA\s*Version:\s*(\d+\.\d+)/g
+          const match = regex.exec(stdout)
+          if (match && match[1]) {
+            data.cuda.version = match[1]
+          }
+        }
+        console.log('[MONITORING]::Finalized cuda info update: ', data)
+        resolve()
+      })
+    })
+  }
   return data
+}
+
+export const getOsInfo = (): OperatingSystemInfo => {
+  const platform =
+    SupportedPlatforms.find((p) => p === process.platform) || 'unknown'
+
+  const osInfo: OperatingSystemInfo = {
+    platform: platform,
+    arch: process.arch,
+    release: os.release(),
+    machine: os.machine(),
+    version: os.version(),
+    totalMem: os.totalmem(),
+    freeMem: os.freemem(),
+  }
+
+  return osInfo
+}
+
+export const registerLogger = ({ logEnabled, logCleaningInterval }) => {
+  const logger = new FileLogger(logEnabled, logCleaningInterval)
+  LoggerManager.instance().register(logger)
+  logger.cleanLogs()
+}
+
+export const unregisterLogger = () => {
+  LoggerManager.instance().unregister('file')
+}
+
+export const updateLogger = ({ logEnabled, logCleaningInterval }) => {
+  const logger = LoggerManager.instance().loggers.get('file') as FileLogger
+  if (logger && logEnabled !== undefined) logger.logEnabled = logEnabled
+  if (logger && logCleaningInterval)
+    logger.logCleaningInterval = logCleaningInterval
+  // Rerun
+  logger && logger.cleanLogs()
 }

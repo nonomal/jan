@@ -1,51 +1,45 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
-import Advanced from '@/screens/Settings/Advanced'
-import AppearanceOptions from '@/screens/Settings/Appearance'
-import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
+import { useSetAtom } from 'jotai'
 
-import Models from '@/screens/Settings/Models'
+import CenterPanelContainer from '@/containers/CenterPanelContainer'
+
+import SettingDetail from '@/screens/Settings/SettingDetail'
+import SettingLeftPanel from '@/screens/Settings/SettingLeftPanel'
 
 import { SUCCESS_SET_NEW_DESTINATION } from './Advanced/DataFolder'
-import SettingMenu from './SettingMenu'
 
-const handleShowOptions = (menu: string) => {
-  switch (menu) {
-    case 'Extensions':
-      return <ExtensionCatalog />
+import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
-    case 'My Settings':
-      return <AppearanceOptions />
+export const SettingScreenList = [
+  'My Models',
+  'Preferences',
+  'Keyboard Shortcuts',
+  'Privacy',
+  'Advanced Settings',
+  'Engines',
+  'Extensions',
+] as const
 
-    case 'Advanced Settings':
-      return <Advanced />
+export type SettingScreenTuple = typeof SettingScreenList
+export type SettingScreen = SettingScreenTuple[number]
 
-    case 'My Models':
-      return <Models />
-  }
-}
-
-const SettingsScreen: React.FC = () => {
-  const [activeStaticMenu, setActiveStaticMenu] = useState('My Models')
+const SettingsScreen = () => {
+  const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
 
   useEffect(() => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
-      setActiveStaticMenu('Advanced Settings')
+      setSelectedSettingScreen('Advanced Settings')
       localStorage.removeItem(SUCCESS_SET_NEW_DESTINATION)
     }
-  }, [])
+  }, [setSelectedSettingScreen])
 
   return (
-    <div
-      className="flex h-full bg-background"
-      data-testid="testid-setting-description"
-    >
-      <SettingMenu
-        activeMenu={activeStaticMenu}
-        onMenuClick={setActiveStaticMenu}
-      />
-
-      {handleShowOptions(activeStaticMenu)}
+    <div data-testid="testid-setting-description" className="flex h-full">
+      <SettingLeftPanel />
+      <CenterPanelContainer>
+        <SettingDetail />
+      </CenterPanelContainer>
     </div>
   )
 }
