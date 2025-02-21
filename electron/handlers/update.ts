@@ -6,7 +6,7 @@ import {
   UpdateInfo,
   autoUpdater,
 } from 'electron-updater'
-import { AppEvent } from '@janhq/core'
+import { AppEvent } from '@janhq/core/node'
 import { trayManager } from '../managers/tray'
 
 export let waitingToInstallVersion: string | undefined = undefined
@@ -16,15 +16,21 @@ export function handleAppUpdates() {
   if (!app.isPackaged) {
     return
   }
+
   /* New Update Available */
   autoUpdater.on('update-available', async (_info: UpdateInfo) => {
-    const action = await dialog.showMessageBox({
-      title: 'Update Available',
-      message: 'Would you like to download and install it now?',
-      buttons: ['Download', 'Later'],
-    })
-    trayManager.destroyCurrentTray()
-    if (action.response === 0) await autoUpdater.downloadUpdate()
+    windowManager.mainWindow?.webContents.send(
+      AppEvent.onAppUpdateAvailable,
+      {}
+    )
+  })
+
+  /* New Update Not Available */
+  autoUpdater.on('update-not-available', async (_info: UpdateInfo) => {
+    windowManager.mainWindow?.webContents.send(
+      AppEvent.onAppUpdateNotAvailable,
+      {}
+    )
   })
 
   /* App Update Completion Message */
@@ -38,6 +44,8 @@ export function handleAppUpdates() {
       buttons: ['Restart', 'Later'],
     })
     if (action.response === 0) {
+      trayManager.destroyCurrentTray()
+      windowManager.closeQuickAskWindow()
       waitingToInstallVersion = _info?.version
       autoUpdater.quitAndInstall()
     }

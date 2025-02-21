@@ -15,6 +15,8 @@ import {
 import { Constants } from './constants'
 import { HubPage } from '../pages/hubPage'
 import { CommonActions } from '../pages/commonActions'
+import { rmSync } from 'fs'
+import * as path from 'path'
 
 export let electronApp: ElectronApplication
 export let page: Page
@@ -22,6 +24,8 @@ export let appInfo: ElectronAppInfo
 export const TIMEOUT = parseInt(process.env.TEST_TIMEOUT || Constants.TIMEOUT)
 
 export async function setupElectron() {
+  console.log(`TEST TIMEOUT: ${TIMEOUT}`)
+
   process.env.CI = 'e2e'
 
   const latestBuild = findLatestBuild('dist')
@@ -32,7 +36,7 @@ export async function setupElectron() {
   expect(appInfo).toBeTruthy()
 
   electronApp = await electron.launch({
-    args: [appInfo.main], // main file from package.json
+    args: [appInfo.main, '--no-sandbox'], // main file from package.json
     executablePath: appInfo.executable, // path to the Electron executable
     // recordVideo: { dir: Constants.VIDEO_DIR }, // Specify the directory for video recordings
   })
@@ -103,9 +107,13 @@ export const test = base.extend<
   ],
 })
 
-test.setTimeout(TIMEOUT)
-
 test.beforeAll(async () => {
+  rmSync(path.join(__dirname, '../../test-data'), {
+    recursive: true,
+    force: true,
+  })
+
+  test.setTimeout(TIMEOUT)
   await setupElectron()
   await page.waitForSelector('img[alt="Jan - Logo"]', {
     state: 'visible',
@@ -114,6 +122,5 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
-  // temporally disabling this due to the config for parallel testing WIP
   // teardownElectron()
 })

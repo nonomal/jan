@@ -1,5 +1,5 @@
 import { clipboard, globalShortcut } from 'electron'
-import { keyboard, Key } from '@nut-tree/nut-js'
+import { keyboard, Key } from "@kirillvakalov/nut-tree__nut-js"
 
 /**
  * Gets selected text by synthesizing the keyboard shortcut
@@ -22,7 +22,7 @@ export const getSelectedText = async () => {
 
 /**
  * Registers a global shortcut of `accelerator`. The `callback` is called
- * with the selected text when the registered shorcut is pressed by the user
+ * with the selected text when the registered shortcut is pressed by the user
  *
  * Returns `true` if the shortcut was registered successfully
  */

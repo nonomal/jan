@@ -1,6 +1,6 @@
-import { app, BrowserWindow, Tray } from 'electron'
+import { app, BrowserWindow } from 'electron'
 
-import { join } from 'path'
+import { join, resolve } from 'path'
 /**
  * Managers
  **/
@@ -19,15 +19,16 @@ import { handleAppIPCs } from './handlers/native'
  **/
 import { setupMenu } from './utils/menu'
 import { createUserSpace } from './utils/path'
-import { migrateExtensions } from './utils/migration'
+import { migrate } from './utils/migration'
 import { cleanUpAndQuit } from './utils/clean'
 import { setupExtensions } from './utils/extension'
 import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
-import { cleanLogs } from './utils/log'
 
-import { registerShortcut } from './utils/selectedText'
 import { trayManager } from './managers/tray'
+import { logSystemInfo } from './utils/system'
+import { registerGlobalShortcuts } from './utils/shortcut'
+import { registerLogger } from './utils/logger'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -37,9 +38,22 @@ const mainPath = join(rendererPath, 'index.html')
 const mainUrl = 'http://localhost:3000'
 const quickAskUrl = `${mainUrl}/search`
 
-const quickAskHotKey = 'CommandOrControl+J'
-
 const gotTheLock = app.requestSingleInstanceLock()
+
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('jan', process.execPath, [
+      resolve(process.argv[1]),
+    ])
+  }
+} else {
+  app.setAsDefaultProtocolClient('jan')
+}
+
+const createMainWindow = () => {
+  const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
+  windowManager.createMainWindow(preloadPath, startUrl)
+}
 
 app
   .whenReady()
@@ -47,27 +61,42 @@ app
     if (!gotTheLock) {
       app.quit()
       throw new Error('Another instance of the app is already running')
+    } else {
+      app.on(
+        'second-instance',
+        (_event, commandLine, _workingDirectory): void => {
+          if (process.platform === 'win32' || process.platform === 'linux') {
+            // this is for handling deeplink on windows and linux
+            // since those OS will emit second-instance instead of open-url
+            const url = commandLine.pop()
+            if (url) {
+              windowManager.sendMainAppDeepLink(url)
+            }
+          }
+          windowManager.showMainWindow()
+        }
+      )
     }
   })
-  .then(setupReactDevTool)
   .then(setupCore)
   .then(createUserSpace)
-  .then(migrateExtensions)
+  .then(registerLogger)
+  .then(migrate)
   .then(setupExtensions)
   .then(setupMenu)
   .then(handleIPCs)
   .then(handleAppUpdates)
   .then(() => process.env.CI !== 'e2e' && createQuickAskWindow())
   .then(createMainWindow)
+  .then(registerGlobalShortcuts)
   .then(() => {
     if (!app.isPackaged) {
+      setupReactDevTool()
       windowManager.mainWindow?.webContents.openDevTools()
     }
   })
   .then(() => process.env.CI !== 'e2e' && trayManager.createSystemTray())
-  .then(() => {
-    log(`Version: ${app.getVersion()}`)
-  })
+  .then(logSystemInfo)
   .then(() => {
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
@@ -77,17 +106,12 @@ app
       }
     })
   })
-  .then(() => cleanLogs())
 
-app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
-  windowManager.showMainWindow()
+app.on('open-url', (_event, url) => {
+  windowManager.sendMainAppDeepLink(url)
 })
 
-app.on('ready', () => {
-  registerGlobalShortcuts()
-})
-
-app.on('before-quit', function (evt) {
+app.on('before-quit', function (_event) {
   trayManager.destroyCurrentTray()
 })
 
@@ -97,7 +121,11 @@ app.once('quit', () => {
 
 app.once('window-all-closed', () => {
   // Feature Toggle for Quick Ask
-  if (getAppConfigurations().quick_ask) return
+  if (
+    getAppConfigurations().quick_ask &&
+    !windowManager.isQuickAskWindowDestroyed()
+  )
+    return
   cleanUpAndQuit()
 })
 
@@ -106,31 +134,6 @@ function createQuickAskWindow() {
   if (!getAppConfigurations().quick_ask) return
   const startUrl = app.isPackaged ? `file://${quickAskPath}` : quickAskUrl
   windowManager.createQuickAskWindow(preloadPath, startUrl)
-}
-
-function createMainWindow() {
-  const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
-  windowManager.createMainWindow(preloadPath, startUrl)
-}
-
-function registerGlobalShortcuts() {
-  const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
-    // Feature Toggle for Quick Ask
-    if (!getAppConfigurations().quick_ask) return
-
-    if (!windowManager.isQuickAskWindowVisible()) {
-      windowManager.showQuickAskWindow()
-      windowManager.sendQuickAskSelectedText(selectedText)
-    } else {
-      windowManager.hideQuickAskWindow()
-    }
-  })
-
-  if (!ret) {
-    console.error('Global shortcut registration failed')
-  } else {
-    console.log('Global shortcut registered successfully')
-  }
 }
 
 /**
